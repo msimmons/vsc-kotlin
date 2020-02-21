@@ -1,0 +1,19 @@
+dependencies {
+    compile group: "net.contrapt.jvmcode", name: "jvmcode-model", version: jvmcode_version, changing: jvmcode_changing
+    compileOnly "io.vertx:vertx-core:$vertx_version"
+    compileOnly 'com.github.h0tk3y.betterParse:better-parse-jvm:0.4.0-alpha-3'
+    runtime "ch.qos.logback:logback-classic:1.2.3"
+    testCompile 'com.github.h0tk3y.betterParse:better-parse-jvm:0.4.0-alpha-3'
+}
+
+task deploy(type: Copy, dependsOn: ['build']) {
+    from ("${project.buildDir}/libs") {
+        include jar.archiveName
+        rename jar.archiveName, 'vsc-kotlin.jar'
+    }
+    into "${project.rootDir}/out"
+}
+
+test {
+    systemProperty 'test.rootDir', project.rootDir
+}

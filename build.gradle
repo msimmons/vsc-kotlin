@@ -1,0 +1,54 @@
+buildscript {
+    repositories {
+        mavenCentral()
+    }
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+allprojects {
+    repositories {
+        mavenCentral()
+        maven { url "https://repo.gradle.org/gradle/libs-releases-local/" }
+        maven { setUrl("https://dl.bintray.com/hotkeytlt/maven") }
+        maven {
+            url "${gh_registry_uri}/jvmcode"
+            credentials {
+                username "$gh_registry_user"
+                password "$gh_registry_key"
+            }
+        }
+    }
+}
+
+subprojects {
+    group 'net.contrapt'
+    version '1.0.0-SNAPSHOT'
+
+    apply plugin: 'kotlin'
+
+    compileKotlin {
+        kotlinOptions {
+            jvmTarget = '1.8'
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    dependencies {
+        compileOnly "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+        compileOnly "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
+
+        testCompile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+        testCompile "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
+        testCompile "com.fasterxml.jackson.module:jackson-module-kotlin:2.9.+"
+        testCompile "io.vertx:vertx-unit:$vertx_version"
+        testCompile "io.kotlintest:kotlintest-runner-junit5:3.4.2"
+        testRuntimeOnly "org.junit.jupiter:junit-jupiter-engine:5.3.1"
+        testImplementation "org.junit.jupiter:junit-jupiter-api:5.3.1"
+    }
+
+}
