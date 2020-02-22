@@ -38,7 +38,7 @@ jobs:
             export ORG_GRADLE_PROJECT_gh_registry_uri=$GH_REGISTRY_URI
             export ORG_GRADLE_PROJECT_gh_registry_user=$GH_REGISTRY_USER
             export ORG_GRADLE_PROJECT_gh_registry_key=$GH_REGISTRY_KEY
-            ./gradlew build deployJars deploy
+            ./gradlew build deploy
             source ~/.nvm/nvm.sh
             nvm i 10
             npm i vsce -g
