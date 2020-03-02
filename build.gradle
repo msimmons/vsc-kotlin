@@ -41,6 +41,7 @@ subprojects {
     dependencies {
         compileOnly "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
         compileOnly "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"
+        compile "org.jetbrains.kotlin:kotlin-compiler-embeddable:$kotlin_version"
 
         testCompile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
         testCompile "org.jetbrains.kotlin:kotlin-reflect:$kotlin_version"

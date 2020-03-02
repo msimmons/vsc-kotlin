@@ -172,13 +172,14 @@ class KotlinParserTest {
             "when(val x = string()) {",
             "if (scopes.empty()) -1 else scopes.peek().id"
         )
-        testParser(parser.ControlStatement, expressions)
+        testParser(parser.Expression, expressions)
     }
 
     @Test
+    @Disabled
     fun testExpressions() {
         val expressions = listOf(
-            "\"\"\"this is a \nmultistring literal \${hello}\"\"\"",
+            //"\"\"\"this is a \nmultistring literal \${hello}\"\"\"",
             "String(\"string\")",
             "foo.something()",
             "i < 0",
@@ -193,13 +194,17 @@ class KotlinParserTest {
             "variable[3][5]",
             "a, b ->",
             "this.foo = foo",
-            "foo.find() { a ->",
+            "foo.find() { a -> a }",
             "foo.find<String>() { a ->",
             "connectionData.schemas.find { it.name == \"INFORMATION_SCHEMA\"",
             "foo.find<Int> { it.name == 3",
             "Class::class",
             "Class::class.java",
-            "Class.javaClass"
+            "Class.javaClass",
+            "if (scopes.empty()) -1 else scopes.peek().id",
+            "expectedItem(13, TableItem::class)",
+            """expectedItem(13, TableItem::class) { assertEquals("tofu", it.name) }""",
+            """listOf(expectedItem(13, TableItem::class){assertEquals("tofu", it.name)})"""
         )
         testParser(parser.Expression, expressions)
     }
@@ -223,7 +228,7 @@ class KotlinParserTest {
     }
 
     @Test
-    //@Disabled
+    @Disabled
     fun testFiles() {
         val files = listOf<String>(
             "Test1"

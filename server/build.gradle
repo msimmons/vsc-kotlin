@@ -17,3 +17,7 @@ task deploy(type: Copy, dependsOn: ['build']) {
 test {
     systemProperty 'test.rootDir', project.rootDir
 }
+
+jar {
+    from { configurations.compile.collect { it.isDirectory() ? it : zipTree(it) } }
+}

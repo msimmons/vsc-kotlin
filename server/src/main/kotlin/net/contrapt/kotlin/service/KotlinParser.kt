@@ -250,37 +250,7 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
         }
     }
 
-    val superRef by typeSpec * optional(-O_PAREN * separated(parser(::Expression), COMMA, true) * -C_PAREN) map {
-        (typeSpec, exprs) ->
-        MatchProcessor { ctx ->
-            typeSpec.block(ctx, false)
-            exprs?.terms?.forEach { it.block(ctx) }
-        }
-    }
-
-    val extendsClause by -COLON * separated(superRef, COMMA) map {
-        extends ->
-        MatchProcessor { ctx ->
-            extends.terms.forEach { it.block(ctx) }
-        }
-    }
-
-    val paramDef by zeroOrMore(annotationRef) * -optional(PARAM_MODIFIER) * -optional(VAR or VAL) * simpleId * -COLON * typeSpec *
-        optional(parser(::assignmentExp)) map {
-        (annotations, varName, typeSpec, assign) ->
-        MatchProcessor { ctx ->
-            annotations.forEach { it.block(ctx) }
-            val type = typeSpec.block(ctx, false)
-            ctx.addSymbol(varName, ParseSymbolType.VARIABLE, "", type.name)
-            assign?.block?.invoke(ctx)
-        }
-    }
-
-    val paramDefs by -O_PAREN * separated(paramDef, COMMA, true) * -C_PAREN map {
-        MatchProcessor { ctx ->
-            it.terms.forEach { it.block(ctx) }
-        }
-    }
+    // Expressions
 
     val varDecl by zeroOrMore(annotationRef) * -optional(VAL or VAR) * simpleId * optional(-COLON * typeSpec) map {
         (annotations, name, typespec) ->
@@ -298,12 +268,125 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
         }
     }
 
-    // Expressions
-    val castExp by parser(::Expression) * -AS * typeSpec map {
-        MatchProcessor {ctx->
-            ctx.logMatch("castExp")
-            it.t2.block(ctx, false)
+    val controlBody by (parser(::Expression) * -optional(SEMI)) or O_BRACE map {
+        MatchProcessor { ctx ->
+            ctx.logMatch("controlBody")
+            when (it) {
+                is MatchProcessor -> {
+                    it.block(ctx)
+                    ctx.endScope()
+                }
+            }
+        }
+    }
+
+    val ifStatment by IF * -O_PAREN * parser(::Expression) * -C_PAREN * controlBody map {
+        (control, exp1, body) ->
+        MatchProcessor { ctx ->
+            ctx.logMatch("if", control)
+            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type="", createScope = true)
+            exp1.block(ctx)
+            body.block(ctx)
+        }
+    }
+
+    val whileStatment by WHILE * -O_PAREN * parser(::Expression) * -C_PAREN * controlBody map {
+        (control, exp1, body) ->
+        MatchProcessor { ctx ->
+            ctx.logMatch("while", control)
+            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type="", createScope = true)
+            exp1.block(ctx)
+            body.block(ctx)
+        }
+    }
+
+    val doStatement by DO * O_BRACE map {
+        MatchProcessor { ctx ->
+            ctx.logMatch("do", it.t1)
+            ctx.addSymbol(it.t1, ParseSymbolType.CONTROL, type = "", createScope = true)
+        }
+    }
+
+    val finallyStatement by FINALLY * O_BRACE map {
+        MatchProcessor { ctx ->
+            ctx.logMatch("finally", it.t1)
+            ctx.addSymbol(it.t1, ParseSymbolType.CONTROL, type = "", createScope = true)
+        }
+    }
+
+    val forStatement by FOR * -O_PAREN * (varDecl or varDecls) * -IN * parser(::Expression) * -C_PAREN * controlBody map {
+        (control, variable, expr, body) ->
+        MatchProcessor { ctx ->
+            ctx.logMatch("for", control)
+            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type = "", createScope = true)
+            variable.block(ctx)
+            expr.block(ctx)
+            body.block(ctx)
+        }
+    }
+
+    val whenStatement by WHEN * -O_PAREN * optional(varDecl * -ASSIGN) * parser(::Expression) * -C_PAREN * -O_BRACE map {
+        (control, subject, expr) ->
+        MatchProcessor { ctx ->
+            ctx.logMatch("when", control)
+            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type = "", createScope = true)
+            subject?.block?.invoke(ctx)
+            expr.block(ctx)
+        }
+    }
+
+    val tryStatement by TRY * -O_BRACE map {
+        MatchProcessor { ctx ->
+            ctx.logMatch("try", it)
+            ctx.addSymbol(it, ParseSymbolType.CONTROL, classifier = "", type = "", createScope = true)
+        }
+    }
+
+    val catchStatement by CATCH * -O_PAREN * zeroOrMore(annotationRef) * simpleId * -COLON * typeSpec * -C_PAREN * -O_BRACE map {
+        (control, annotations, name, typespec) ->
+        MatchProcessor { ctx ->
+            ctx.logMatch("catch", control)
+            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type = "", createScope = true)
+            annotations.forEach { it.block(ctx) }
+            val type = typespec.block(ctx, false)
+            ctx.addSymbol(name, ParseSymbolType.VARIABLE, "", type.name)
+        }
+    }
+
+    val elseStatement by ELSE * controlBody map {
+        (control, body) ->
+        MatchProcessor { ctx ->
+            ctx.logMatch("else", control)
+            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type="", createScope = true)
+            body.block(ctx)
+        }
+    }
+
+    val thenStatement by ELSE * (ifStatment or doStatement or whileStatment or whenStatement or forStatement or tryStatement) map {
+        MatchProcessor { ctx ->
+            ctx.logMatch("else then", it.t1)
+            it.t2.block(ctx)
+        }
+    }
+
+    val ifElseStatement by ifStatment * elseStatement map {
+        MatchProcessor { ctx ->
+            ctx.logMatch("ifElse")
             it.t1.block(ctx)
+            it.t2.block(ctx)
+        }
+    }
+
+    val controlStatement by ifStatment or whileStatment or doStatement or forStatement or whenStatement or tryStatement or catchStatement or
+        finallyStatement or elseStatement or thenStatement or ifElseStatement map {
+        MatchProcessor { ctx ->
+            it.block(ctx)
+        }
+    }
+
+    val elseArrow by ELSE * ARROW map {
+        MatchProcessor { ctx ->
+            ctx.logMatch("else ->", it.t1)
         }
     }
 
@@ -326,7 +409,7 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
     }
 
     val funCall by fqId * optional(typeArgs) * optional(arrayRef) * -O_PAREN * separated(optional(simpleId * -ASSIGN) *
-        parser(::Expression), COMMA, true) * -C_PAREN * optional(O_BRACE) map {
+        parser(::Expression), COMMA, true) * -C_PAREN * optional(parser(::lambdaExp)) map {
         (name, typeargs, array, exprs, term) ->
         MatchProcessor{ctx->
             ctx.logMatch("methodRef")
@@ -337,7 +420,8 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
                 if (it.t1 != null) ctx.addSymbolRef(it.t1!!)
                 it.t2.block(ctx)
             }
-            if (term != null) ctx.addSymbol(term, ParseSymbolType.BLOCK, createScope = true)
+            term?.block?.invoke(ctx)
+            //if (term != null) ctx.addSymbol(term, ParseSymbolType.BLOCK, createScope = true)
         }
     }
 
@@ -375,14 +459,18 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
         }
     }
 
+    val lambdaExp by -O_BRACE * optional(lambdaParams) * parser(::Expression) * -C_BRACE map {
+        MatchProcessor { ctx ->
+            ctx.logMatch("lambdaExp")
+            it.t1?.block?.invoke(ctx)
+            it.t2.block(ctx)
+        }
+    }
+
     val labelExp by simpleId * -AT map {
         MatchProcessor { ctx ->
             ctx.addSymbol(it, ParseSymbolType.BLOCK)
         }
-    }
-
-    val lambdaDecl by (varDecl or varDecls) * -ARROW map {
-
     }
 
     val exprArrow by separated(parser(::Expression), COMMA) * -ARROW map {
@@ -392,8 +480,8 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
     }
 
     val Expression : Parser<MatchProcessor> by oneOrMore(
-        literal or lambdaParams or funCall or varExp or compoundExp or assignmentExp or
-            operator or QUESTION or COLON or OTHER or DOT or RETURN or THROW or AS or COMMA or ARROW) map {
+        literal or lambdaParams or funCall or varExp or compoundExp or elseArrow or controlStatement or assignmentExp or lambdaExp or
+            operator or QUESTION or COLON or OTHER or DOT or RETURN or THROW or AS or COMMA or ARROW or ASSIGN) map {
         MatchProcessor{ ctx ->
             ctx.logMatch("Expression", null)
             it.forEach {m ->
@@ -402,6 +490,38 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
                     is MatchProducer -> m.block(ctx, false)
                 }
             }
+        }
+    }
+
+    val superRef by typeSpec * optional(-O_PAREN * separated(Expression, COMMA, true) * -C_PAREN) map {
+        (typeSpec, exprs) ->
+        MatchProcessor { ctx ->
+            typeSpec.block(ctx, false)
+            exprs?.terms?.forEach { it.block(ctx) }
+        }
+    }
+
+    val extendsClause by -COLON * separated(superRef, COMMA) map {
+        extends ->
+        MatchProcessor { ctx ->
+            extends.terms.forEach { it.block(ctx) }
+        }
+    }
+
+    val paramDef by zeroOrMore(annotationRef) * -optional(PARAM_MODIFIER) * -optional(VAR or VAL) * simpleId * -COLON * typeSpec *
+        optional(-ASSIGN * Expression) map {
+        (annotations, varName, typeSpec, assign) ->
+        MatchProcessor { ctx ->
+            annotations.forEach { it.block(ctx) }
+            val type = typeSpec.block(ctx, false)
+            ctx.addSymbol(varName, ParseSymbolType.VARIABLE, "", type.name)
+            assign?.block?.invoke(ctx)
+        }
+    }
+
+    val paramDefs by -O_PAREN * separated(paramDef, COMMA, true) * -C_PAREN map {
+        MatchProcessor { ctx ->
+            it.terms.forEach { it.block(ctx) }
         }
     }
 
@@ -431,7 +551,7 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
         }
     }
 
-    val constructorDelegate by -COLON * (SUPER or THIS) * -O_PAREN * separated(parser(::Expression), COMMA, true) * -C_PAREN map {
+    val constructorDelegate by -COLON * (SUPER or THIS) * -O_PAREN * separated(Expression, COMMA, true) * -C_PAREN map {
         MatchProcessor { ctx ->
             ctx.addSymbolRef(it.t1)
             it.t2.terms.forEach { it.block(ctx) }
@@ -464,7 +584,7 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
     }
 
     val FieldDef by zeroOrMore(annotationRef) * zeroOrMore(modifiers) * -(VAL or VAR) * simpleId * optional(-COLON * typeSpec) *
-        optional(assignmentExp) * optional(O_BRACE or SEMI) map {
+        optional(-ASSIGN * Expression) * optional(O_BRACE or SEMI) map {
         (annotations, _, name, typespec, expression) ->
         MatchProcessor { ctx ->
             ctx.logMatch("FieldDef", name)
@@ -500,118 +620,6 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
         }
     }
 
-    val controlBody by (Expression * -optional(SEMI)) or O_BRACE map {
-        MatchProcessor { ctx ->
-            ctx.logMatch("controlBody")
-            when (it) {
-                is MatchProcessor -> {
-                    it.block(ctx)
-                    ctx.endScope()
-                }
-            }
-        }
-    }
-
-    val ifWhile by (IF or WHILE) * -O_PAREN * Expression * -C_PAREN * controlBody map {
-        (control, exp1, body) ->
-        MatchProcessor { ctx ->
-            ctx.logMatch("ifControl", control)
-            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type="", createScope = true)
-            exp1.block(ctx)
-            body.block(ctx)
-        }
-    }
-
-    val doControl by DO * O_BRACE map {
-        MatchProcessor { ctx ->
-            ctx.logMatch("do", it.t1)
-            ctx.addSymbol(it.t1, ParseSymbolType.CONTROL, type = "", createScope = true)
-        }
-    }
-
-    val finallyControl by FINALLY * O_BRACE map {
-        MatchProcessor { ctx ->
-            ctx.logMatch("finally", it.t1)
-            ctx.addSymbol(it.t1, ParseSymbolType.CONTROL, type = "", createScope = true)
-        }
-    }
-
-    val elseControl by ELSE * -optional(IF or WHILE or DO or WHEN) * controlBody map {
-        (control, body) ->
-        MatchProcessor { ctx ->
-            ctx.logMatch("elseControl", control)
-            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type="", createScope = true)
-            body.block(ctx)
-        }
-    }
-
-    val elseIfControl by ELSE * (ifWhile or doControl ) map {
-        MatchProcessor { ctx ->
-            ctx.logMatch("elseIfControl", it.t1)
-            it.t2.block(ctx)
-        }
-    }
-
-    val elseArrow by ELSE * ARROW map {
-        MatchProcessor { ctx ->
-            ctx.logMatch("elseArrow", it.t1)
-        }
-    }
-
-    val ifElse by ifWhile * elseControl map {
-        MatchProcessor { ctx ->
-            ctx.logMatch("ifElse")
-            it.t1.block(ctx)
-            it.t2.block(ctx)
-        }
-    }
-
-    val forControl by FOR * -O_PAREN * (varDecl or varDecls) * -IN * Expression * -C_PAREN * controlBody map {
-        (control, variable, expr, body) ->
-        MatchProcessor { ctx ->
-            ctx.logMatch("forControl", control)
-            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type = "", createScope = true)
-            variable.block(ctx)
-            expr.block(ctx)
-            body.block(ctx)
-        }
-    }
-
-    val whenControl by WHEN * -O_PAREN * optional(varDecl * -ASSIGN) * Expression * -C_PAREN * -O_BRACE map {
-        (control, subject, expr) ->
-        MatchProcessor { ctx ->
-            ctx.logMatch("catchControl", control)
-            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type = "", createScope = true)
-            subject?.block?.invoke(ctx)
-            expr.block(ctx)
-        }
-    }
-
-    val tryControl by TRY * -O_BRACE map {
-        MatchProcessor { ctx ->
-            ctx.logMatch("tryControl", it)
-            ctx.addSymbol(it, ParseSymbolType.CONTROL, classifier = "", type = "", createScope = true)
-        }
-    }
-
-    val catchControl by CATCH * -O_PAREN * zeroOrMore(annotationRef) * simpleId * -COLON * typeSpec * -C_PAREN * -O_BRACE map {
-        (control, annotations, name, typespec) ->
-        MatchProcessor { ctx ->
-            ctx.logMatch("catchControl", control)
-            ctx.addSymbol(control, ParseSymbolType.CONTROL, classifier = "", type = "", createScope = true)
-            annotations.forEach { it.block(ctx) }
-            val type = typespec.block(ctx, false)
-            ctx.addSymbol(name, ParseSymbolType.VARIABLE, "", type.name)
-        }
-    }
-
-    val ControlStatement by (ifElse or ifWhile or forControl or whenControl or finallyControl or doControl or
-        elseIfControl or elseControl or tryControl or catchControl or elseArrow) map {
-        MatchProcessor { ctx ->
-            it.block(ctx)
-        }
-    }
-
     val CloseBlock : Parser<MatchProcessor> by C_BRACE map {
         MatchProcessor { ctx ->
             ctx.logMatch("CloseBlock", it)
@@ -619,7 +627,7 @@ class KotlinParser : Grammar<Any>(), LanguageParser, Shareable {
         }
     }
 
-    val Statement by optional(labelExp) * -optional(RETURN or THROW) * (Expression or ControlStatement) * optional(O_BRACE or SEMI) map {
+    val Statement by optional(labelExp) * -optional(RETURN or THROW) * (Expression) * optional(O_BRACE or SEMI) map {
         (label, expr, term) ->
         MatchProcessor { ctx ->
             ctx.logMatch("Statement")
