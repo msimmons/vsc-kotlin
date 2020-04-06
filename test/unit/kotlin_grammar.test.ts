@@ -82,7 +82,11 @@ describe('Parse kotlin expressions', () => {
             new Fixture('fun MyFun()', ParseSymbolType.METHOD, 1),
             new Fixture('protected fun <reified T> MyFun() : Unit',ParseSymbolType.METHOD, 3),
             new Fixture('protected fun <reified T> MyFun(foo: Int, bar: Collection<String>) : Unit',ParseSymbolType.METHOD, 8),
-            new Fixture('protected fun MyFun(foo: Int, bar: Collection<String>) : Collection<String>',ParseSymbolType.METHOD, 8)
+            new Fixture('protected fun MyFun(foo: Int, bar: Collection<String>) : Collection<String>',ParseSymbolType.METHOD, 8),
+            new Fixture('private fun MyFun(foo: Int? = null)', ParseSymbolType.METHOD, 4),
+            new Fixture('private fun MyFun(foo: Int? = null) = if (foo) "" else "hello"', ParseSymbolType.METHOD, 7),
+            new Fixture('private fun MyFun(vararg foo: Int) : Collection<String>', ParseSymbolType.METHOD, 5),
+            new Fixture('override fun MyFun(vararg foo: Int) : Collection<String>', ParseSymbolType.METHOD, 5),
         ].forEach(p => {
             let result = Grammar.MethodDef.parse(p.text)
             let symbol = handleResult(p, result)
@@ -95,6 +99,7 @@ describe('Parse kotlin expressions', () => {
             new Fixture('protected var foo: String?', ParseSymbolType.VARIABLE, 2),
             new Fixture('var foo = "a string"', ParseSymbolType.VARIABLE, 2),
             new Fixture('public val foo: Collection<String> = emptyList<String>()', ParseSymbolType.VARIABLE, 5),
+            new Fixture('lateinit var foo: String?', ParseSymbolType.VARIABLE, 2),
         ].forEach(p => {
             let result = Grammar.FieldDef.parse(p.text)
             let symbol = handleResult(p, result)

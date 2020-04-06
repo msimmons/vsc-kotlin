@@ -55,6 +55,8 @@ function blockContents() {
 export const Grammar = P.createLanguage<{
     _: string
     __: string
+    NULL_LITERAL: Node<'Literal', LiteralNode>
+    BOOLEAN_LITERAL: Node<'Literal', LiteralNode>
     CHAR_LITERAL: Node<'Literal', LiteralNode>
     UNICODE_LITERAL: Node<'Literal', LiteralNode>
     STRING_LITERAL: Node<'Literal', LiteralNode>
@@ -72,10 +74,8 @@ export const Grammar = P.createLanguage<{
     Ident: IdNode
     QIdent: IdNode
     Term: string
-    MemberModifier: string
-    FunModifier: string
-    TypeModifier: string
     ParamModifier: string
+    ParamModifiers: string[]
     Modifier: string
     Modifiers: string[]
     TypeName: ParseSymbolType
@@ -119,6 +119,7 @@ export const Grammar = P.createLanguage<{
     TypeDef: SymbolCreator
     ConstructorDef: SymbolCreator
     MethodDecl: SymbolCreator
+    MethodBody: SymbolCreator
     MethodDef: SymbolCreator
     FieldDef: SymbolCreator
     Initializer: SymbolCreator
@@ -132,6 +133,8 @@ export const Grammar = P.createLanguage<{
 }>({
     _: () => P.optWhitespace,
     __: () => P.whitespace,
+    NULL_LITERAL: () => P.regexp(/null/).map(v => {return {value: v, type: 'null'}}).node('Literal'),
+    BOOLEAN_LITERAL: () => P.regexp(/true|false/).map(v => {return {value: v, type: 'java.lang.Boolean'}}).node('Literal'),
     CHAR_LITERAL: () => P.regexp(/'[\\]?\w'/).map(v => {return {value: v, type: 'java.lang.Char'}}).node('Literal'),
     UNICODE_LITERAL: () => P.regexp(/'\\[uU][0-9a-fA-F]{4}'/).map(v => {return {value: v, type: 'java.lang.Char'}}).node('Literal'),
     STRING_LITERAL: () => P.regexp(/"([^"]|""')*"/).map(v => {return {value: v, type: 'java.lang.String'}}).node('Literal'),
@@ -148,8 +151,8 @@ export const Grammar = P.createLanguage<{
     Keyword: () => P.regexp(/(return|throw|if|else|while|do)\b/).node('Keyword'),
     ModifierKeyword: () => P.regexp(/(static|synchronized|init)\b/).node('Keyword'),
 
-    Literal: (r) => P.alt(P.regexp(/false|true|null/), r.UNICODE_LITERAL, r.CHAR_LITERAL, r.STRING3_LITERAL, 
-        r.STRING_LITERAL, r.HEX_LITERAL, r.BIN_LITERAL, r.NUM_LITERAL, r.OCT_LITERAL).map(node => {
+    Literal: (r) => P.alt(r.NULL_LITERAL, r.BOOLEAN_LITERAL, r.UNICODE_LITERAL, r.CHAR_LITERAL, r.STRING3_LITERAL, 
+        r.STRING_LITERAL, r.HEX_LITERAL, r.BIN_LITERAL, r.NUM_LITERAL, r.OCT_LITERAL).trim(r._).map(node => {
             return {name: node.value.value, type: node.value.type, symbolType: ParseSymbolType.LITERAL, start: node.start.offset, end: node.end.offset}
     }),
 
@@ -366,12 +369,9 @@ export const Grammar = P.createLanguage<{
         return undefined
     }),
 
-    MemberModifier: () => P.regexp(/((suspend|override|lateinit|public|private|internal|protected|const)\b)*/),
-    FunModifier: () => P.regexp(/((tailrec|operator|infix|inline|external|suspend)\b)*/),
-    TypeModifier: () => P.regexp(/((abstract|final|open|inner)\b)*/),
-    ParamModifier: () => P.regexp(/((vararg|noinline|crossinline|lateinit|public|private|protected|internal)\b)*/),
-
-    Modifier: () => P.regexp(/public|private|internal|protected|final|transient|threadsafe|volatile|abstract|native|strictfp|inner|static|default|synchronized/),
+    ParamModifier: () => P.regexp(/vararg|noinline|crossinline/),
+    ParamModifiers: (r) => P.sepBy(r.ParamModifier, r.__),
+    Modifier: () => P.regexp(/public|private|internal|protected|override|lateinit|abstract|final|open|tailrec|operator|inline|infix|external|suspend|const/),
     Modifiers: (r) => P.sepBy(r.Modifier, r.__),
 
     // Extension, Implementation and Delegation
@@ -390,11 +390,12 @@ export const Grammar = P.createLanguage<{
 
     // Formal parameter definition
     ParamDef: (r) => P.seq(
-        r.Annotations, r.ParamModifier, P.regexp(/((var|val)\s+)?/), r.Ident, P.string(':'), r.FullType
+        r.Annotations, r.ParamModifiers, P.regexp(/((var|val)\s+)?/), r.Ident, P.string(':'), r.FullType, r.Initializer.atMost(1)
     ).trim(r._).node('ParamDef').map(node => context => {
         context.logNode(node)
         node.value[0](context)
         let type = node.value[5](context)
+        node.value[6].forEach(v => v(context))
         let id = node.value[3]
         return context.addSymDef(id.name, type.name, ParseSymbolType.VARIABLE, id.start, id.end, 0)
     }),
@@ -412,7 +413,7 @@ export const Grammar = P.createLanguage<{
     }),
 
     // Type definition
-    TypeName: (r) => P.seq(P.regexp(/enum|annotation|data|sealed/).atMost(1), r._, P.regexp(/class|interface|object/)).map(n => {
+    TypeName: (r) => P.seq(P.regexp(/enum|annotation|data|sealed|inner/).atMost(1), r._, P.regexp(/class|interface|object/)).map(n => {
         let prefix = n[0].length > 0 ? n[0][0] : undefined
         let type = n[2]
         switch(prefix) {
@@ -464,18 +465,26 @@ export const Grammar = P.createLanguage<{
 
     // Expressions
     ParenExpression: (r) => P.alt(
-        P.regexp(/\(\s*\)/),
+        r._.wrap(P.string('('), P.string(')')),
         r.Expression.wrap(P.string('('), P.string(')'))
     ).node('ParenExpression').map(node => context => {
         context.logNode(node)
         return (typeof node.value === 'function') ? node.value(context) : undefined
     }),
-    Expression: (r) => P.alt(r.Literal, r.QIdent, r.ParenExpression, P.regexp(/[^\w()]/)).atLeast(1).node('Expression').map(node => context => {
+    Expression: (r) => P.alt(
+        r.Literal, 
+        r.BlockKeyword, 
+        r.Keyword, 
+        r.QIdent,
+        r.ParenExpression, 
+        P.regexp(/[^\w()]/)
+    ).atLeast(1).node('Expression').map(node => context => {
         context.logNode(node)
         node.value.forEach(v => {
             if (typeof v === 'object') {
-                let sym = (v.symbolType === ParseSymbolType.LITERAL) ? context.addLiteral(v.name, v.type, v.start, v.end) :
-                context.addSymRef(v.name, v.start, v.end)
+                if (v.name === 'Literal') context.addLiteral(v.name, v.type, v.start, v.end)
+                else if (v.name === 'Keyword') undefined // start a scope?
+                else context.addSymRef(v.name, v.start, v.end)
             }
             else if (typeof v === 'function') v(context)
         })
@@ -510,14 +519,20 @@ export const Grammar = P.createLanguage<{
         let id = node.value[2]
         return context.addSymDef(id.name, undefined, ParseSymbolType.METHOD, id.start, id.end, 0, true)
     }),
+    MethodBody: (r) => P.seq(
+        P.regexp(/=\s*/), r.Expression
+    ).trim(r._).node('MethodBody').map(node => context => {
+        return node.value[1](context)
+    }),
     MethodDef: (r) => P.seq(
-        r.TypePrefix, r._, r.MethodDecl, r.ParamDefs, r.ReturnType, r.Term
+        r.TypePrefix, r.MethodDecl, r.ParamDefs, r.ReturnType, r.MethodBody.atMost(1), r.Term
     ).trim(r._).node('MethodDef').map(node => context => {
         context.logNode(node)
         node.value[0](context)
-        let sym = node.value[2](context)
-        node.value[3](context)
-        let type = node.value[4](context)
+        let sym = node.value[1](context)
+        node.value[2](context)
+        let type = node.value[3](context)
+        node.value[4].forEach(v => v(context))
         sym.type = type ? type.name : undefined
         //if (node.value[6].includes(';')) context.endPendingScope()
         return sym

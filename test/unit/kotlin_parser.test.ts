@@ -29,6 +29,7 @@ describe('Parse a kotlin source file', () => {
         let request = {text: text, file: filename, languageId: 'kotlin'} as ParseRequest
         it(filename, () => {
             let result = parser.parse(request)
+            //console.log(JSON.stringify(result, undefined, 3))
             expect(result).to.deep.include(expected)
             expect(end-start).to.be.lessThan(1000)
         })
